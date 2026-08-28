@@ -1,4 +1,4 @@
-# Palworld WorldOption.sav Editor
+# Palworld WorldOption Editor
 
 **[English](#english)** · **[日本語](#japanese)** · **[简体中文](#chinese)**
 
@@ -12,7 +12,7 @@ A lightweight Windows desktop editor for Palworld `WorldOption.sav` files, with 
 
 ## Overview
 
-Palworld WorldOption.sav Editor provides a graphical interface for viewing and editing the settings stored in `WorldOption.sav`.
+Palworld WorldOption Editor provides a graphical interface for viewing and editing the settings stored in `WorldOption.sav`.
 
 The application is designed for local Palworld save data and opens only files named `WorldOption.sav`. The default file browser location is:
 
@@ -119,7 +119,7 @@ Some settings can have significant effects on an existing world when reduced bel
 
 ## 概要
 
-Palworld WorldOption.sav Editor は、Palworld の `WorldOption.sav` に保存されているワールド設定を確認・編集するための Windows 向け GUI ツールです。
+Palworld WorldOption Editor は、Palworld の `WorldOption.sav` に保存されているワールド設定を確認・編集するための Windows 向け GUI ツールです。
 
 このアプリケーションは `WorldOption.sav` という名前のファイルのみを開きます。ファイル選択画面の初期フォルダーは次の場所です。
 
@@ -226,7 +226,7 @@ Palworld のセーブファイルは、Palworld 独自の圧縮コンテナ内�
 
 ## 概述
 
-Palworld WorldOption.sav Editor 是一个用于查看和编辑 Palworld `WorldOption.sav` 世界设置的 Windows 图形界面工具。
+Palworld WorldOption Editor 是一个用于查看和编辑 Palworld `WorldOption.sav` 世界设置的 Windows 图形界面工具。
 
 程序只允许打开名为 `WorldOption.sav` 的文件。文件选择器默认从以下目录开始：
 
