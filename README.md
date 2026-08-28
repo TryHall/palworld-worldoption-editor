@@ -1,6 +1,6 @@
 # Palworld WorldOption.sav Editor
 
-**English(#english)** · **日本語(#japanese)** · **简体中文(#chinese)**
+**[English](#english)** · **[日本語](#japanese)** · **[简体中文](#chinese)**
 
 A lightweight Windows desktop editor for Palworld `WorldOption.sav` files, with full setting visualization, multilingual descriptions, automatic backups, and save-integrity checks.
 
