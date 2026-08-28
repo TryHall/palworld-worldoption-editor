@@ -15,17 +15,16 @@ The application:
 
 Notes:
 - Current Palworld saves may use PlM/Oodle compression. ``pyooz`` decodes
-  those files; because pyooz is decoder-only, edited PlM input is written as
-  Palworld's compatible PlZ/0x32 double-zlib format.
-- The PlZ/0x32 header follows palworld-save-tools exactly: the compressed-size
-  field stores the INNER zlib stream size, not the final outer stream size.
-- A byte-identical GVAS no-op round-trip is required before editing. If the
-  installed parser cannot reproduce the loaded GVAS exactly, saving is blocked.
+  those files. Following Dehmahk/Palworld-WorldOption-Editor, edited PlM input
+  is written as classic single-zlib PlZ/0x31, which Palworld can read.
+- WorldOption.sav is parsed with empty type hints/custom-property handlers and
+  existing serialized property types are preserved when values are changed.
+- Every generated save is decompressed again and compared byte-for-byte with
+  the GVAS payload before the original file is replaced.
 """
 
 from __future__ import annotations
 
-import copy
 import csv
 import hashlib
 import io
@@ -46,15 +45,11 @@ from tkinter import filedialog, messagebox, ttk
 
 _IMPORT_ERROR = None
 _BACKEND_NAME = None
-PALWORLD_TYPE_HINTS = {}
 
-# Public PyPI backend for GVAS parsing/serialization.
+# Public PyPI backend for GVAS parsing/serialization. WorldOption.sav does not
+# need Palworld's Level.sav-specific type hints or custom-property handlers.
 try:
     from palworld_save_tools.gvas import GvasFile
-    try:
-        from palworld_save_tools.paltypes import PALWORLD_TYPE_HINTS
-    except Exception:
-        PALWORLD_TYPE_HINTS = {}
     _BACKEND_NAME = "palworld-save-tools"
 except Exception as exc:
     GvasFile = None
@@ -976,16 +971,12 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def decompress_sav(raw: bytes) -> tuple[bytes, bytes, int]:
-    """Return ``(GVAS bytes, container magic, save_type_byte)``.
+def _parse_sav_header(raw: bytes):
+    """Return (uncompressed_len, compressed_len, magic, save_type, data_offset).
 
-    Supported by this standalone editor:
-      * PlM1: Oodle input via pyooz (read); saved back as PlZ2 after editing.
-      * PlZ1: single-zlib input/output.
-      * PlZ2: double-zlib input/output.
-
-    The PlZ2 header is subtle: its ``compressed_len`` field is the length of
-    the INNER zlib stream. The outer stream occupies the rest of the file.
+    This intentionally follows Dehmahk/Palworld-WorldOption-Editor. CNK input
+    is unwrapped to its embedded Palworld payload for reading; saved output is
+    written as ordinary PlZ.
     """
     if len(raw) < 12:
         raise SaveFormatError("File is too small to be a Palworld save.")
@@ -994,54 +985,57 @@ def decompress_sav(raw: bytes) -> tuple[bytes, bytes, int]:
     compressed_len = int.from_bytes(raw[4:8], "little")
     magic = raw[8:11]
     save_type = raw[11]
+    data_offset = 12
 
     if magic == b"CNK":
-        raise SaveFormatError(
-            "Microsoft Store/CNK WorldOption.sav files are not supported by "
-            "this build. Use a Steam/standard WorldOption.sav."
-        )
+        if len(raw) < 24:
+            raise SaveFormatError("CNK save header is truncated.")
+        uncompressed_len = int.from_bytes(raw[12:16], "little")
+        compressed_len = int.from_bytes(raw[16:20], "little")
+        magic = raw[20:23]
+        save_type = raw[23]
+        data_offset = 24
+
     if magic not in (b"PlZ", b"PlM"):
         raise SaveFormatError(f"Unsupported Palworld save header: {magic!r}")
-
-    payload = raw[12:]
-    if not payload:
+    if compressed_len <= 0:
         raise SaveFormatError("The save payload is empty.")
+    if data_offset + compressed_len > len(raw):
+        raise SaveFormatError(
+            f"Compressed payload is truncated: header={compressed_len}, "
+            f"available={len(raw) - data_offset}."
+        )
+    return uncompressed_len, compressed_len, magic, save_type, data_offset
+
+
+def decompress_sav(raw: bytes) -> tuple[bytes, bytes, int]:
+    """Return ``(GVAS bytes, container magic, save_type_byte)``.
+
+    The implementation mirrors Dehmahk/Palworld-WorldOption-Editor: payload
+    length is taken from the save header, PlM is decoded with pyooz, and PlZ
+    uses one or two zlib passes depending on save_type.
+    """
+    uncompressed_len, compressed_len, magic, save_type, data_offset = _parse_sav_header(raw)
+    payload = raw[data_offset:data_offset + compressed_len]
 
     if magic == b"PlM":
         if _ooz_decompress is None:
             raise SaveFormatError("PYOOZ_REQUIRED")
-        # PlM uses the actual Oodle payload size in the header.
-        if compressed_len != len(payload):
-            raise SaveFormatError(
-                f"Incorrect PlM compressed length: header={compressed_len}, "
-                f"actual={len(payload)}."
-            )
         try:
             gvas = _ooz_decompress(payload, uncompressed_len)
         except Exception as exc:
-            raise SaveFormatError(f"Oodle decompression failed: {exc}") from exc
+            raise SaveFormatError(
+                "Oodle decompression failed. "
+                f"uncompressed_len={uncompressed_len}, compressed_len={compressed_len}, "
+                f"payload={len(payload)}: {exc}"
+            ) from exc
     else:
         if save_type not in (0x31, 0x32):
             raise SaveFormatError(f"Unsupported PlZ save type: 0x{save_type:02X}")
         try:
-            if save_type == 0x31:
-                # PlZ1 stores the actual single-zlib payload size.
-                if compressed_len != len(payload):
-                    raise SaveFormatError(
-                        f"Incorrect PlZ1 compressed length: header={compressed_len}, "
-                        f"actual={len(payload)}."
-                    )
-                gvas = zlib.decompress(payload)
-            else:
-                # PlZ2: first decompress the OUTER stream. The header's
-                # compressed_len must equal the resulting INNER stream size.
-                inner = zlib.decompress(payload)
-                if compressed_len != len(inner):
-                    raise SaveFormatError(
-                        f"Incorrect PlZ2 inner compressed length: "
-                        f"header={compressed_len}, actual={len(inner)}."
-                    )
-                gvas = zlib.decompress(inner)
+            gvas = zlib.decompress(payload)
+            if save_type == 0x32:
+                gvas = zlib.decompress(gvas)
         except zlib.error as exc:
             raise SaveFormatError(f"zlib decompression failed: {exc}") from exc
 
@@ -1054,42 +1048,28 @@ def decompress_sav(raw: bytes) -> tuple[bytes, bytes, int]:
     return bytes(gvas), magic, save_type
 
 
-def _compress_plz(gvas: bytes, save_type: int) -> bytes:
-    """Build a Palworld PlZ1 or PlZ2 container exactly like save-tools.
+def compress_sav(gvas_bytes: bytes, source_magic: bytes, source_save_type: int) -> bytes:
+    """Write classic PlZ exactly as Dehmahk's WorldOption editor does.
 
-    For 0x32/double-zlib, ``compressed_len`` is deliberately calculated BEFORE
-    the second compression pass. This matches palworld-save-tools and Palworld's
-    expected PlZ2 layout.
+    Modern PlM/Oodle input is deliberately emitted as single-zlib PlZ1. For
+    an existing non-PlM PlZ2 input, the original double-zlib type is retained.
     """
-    if save_type not in (0x31, 0x32):
-        raise SaveFormatError(f"Unsupported PlZ save type: 0x{save_type:02X}")
+    uncompressed_len = len(gvas_bytes)
+    out_magic = b"PlZ"
+    out_save_type = 0x32 if (source_magic != b"PlM" and source_save_type == 0x32) else 0x31
 
-    inner = zlib.compress(gvas)
-    compressed_len = len(inner)
-    payload = zlib.compress(inner) if save_type == 0x32 else inner
+    compressed = zlib.compress(gvas_bytes)
+    if out_save_type == 0x32:
+        compressed = zlib.compress(compressed)
+    compressed_len = len(compressed)
 
     return (
-        len(gvas).to_bytes(4, "little")
+        uncompressed_len.to_bytes(4, "little")
         + compressed_len.to_bytes(4, "little")
-        + b"PlZ"
-        + bytes([save_type])
-        + payload
+        + out_magic
+        + bytes([out_save_type])
+        + compressed
     )
-
-
-def compress_for_source(gvas: bytes, source_magic: bytes, source_save_type: int) -> bytes:
-    """Compress edited GVAS using a PyPI-only compatibility path.
-
-    ``pyooz`` can decode PlM/Oodle but cannot encode it, so modern PlM input is
-    written as PlZ2. palworld-save-tools itself uses PlZ2 for Palworld world
-    save classes and Palworld accepts zlib-recompressed saves.
-    """
-    if source_magic == b"PlM":
-        return _compress_plz(gvas, 0x32)
-    if source_magic == b"PlZ":
-        save_type = source_save_type if source_save_type in (0x31, 0x32) else 0x32
-        return _compress_plz(gvas, save_type)
-    raise SaveFormatError(f"Unsupported source container: {source_magic!r}")
 
 
 def first_difference(a: bytes, b: bytes) -> int | None:
@@ -1103,19 +1083,13 @@ def first_difference(a: bytes, b: bytes) -> int | None:
     return None
 
 
-def require_gvas_roundtrip(gvas: bytes):
-    """Parse and immediately reserialize GVAS; require byte-identical output."""
-    parsed = GvasFile.read(gvas, PALWORLD_TYPE_HINTS, {}, allow_nan=True)
-    rewritten = parsed.write({})
-    if rewritten != gvas:
-        pos = first_difference(gvas, rewritten)
-        raise SaveFormatError(
-            "The installed GVAS parser cannot reproduce this WorldOption.sav "
-            "byte-for-byte without edits. Saving is blocked to prevent corruption. "
-            f"First difference: offset {pos}; input={len(gvas)} bytes, "
-            f"round-trip={len(rewritten)} bytes. Try updating palworld-save-tools."
-        )
-    return parsed
+def parse_worldoption_gvas(gvas: bytes):
+    """Parse WorldOption GVAS using the same empty hint maps as the reference."""
+    try:
+        return GvasFile.read(gvas, {}, {}, allow_nan=True)
+    except Exception as exc:
+        raise SaveFormatError(f"GVAS parsing failed: {exc}") from exc
+
 
 def next_backup_path(save_path: Path) -> Path:
     """Return .bak, then .bak01, .bak02 ... without overwriting old backups."""
@@ -1319,18 +1293,8 @@ class WorldOptionDocument:
         self.original_save_type: int | None = None
         self.original_gvas: bytes | None = None
 
-    def load(self, path: str | os.PathLike) -> dict:
-        path = Path(path)
-        if path.name.casefold() != SAVE_FILENAME.casefold():
-            raise ValueError("INVALID_NAME")
-
-        raw = path.read_bytes()
-        gvas_bytes, magic, save_type = decompress_sav(raw)
-
-        # Critical safety gate: do not allow editing with a parser that changes
-        # untouched bytes. This catches serializer/version mismatches up front.
-        gvas_file = require_gvas_roundtrip(gvas_bytes)
-
+    @staticmethod
+    def _get_settings(gvas_file) -> dict:
         props = gvas_file.properties
         option_prop = props.get("OptionWorldData")
         if not isinstance(option_prop, dict):
@@ -1341,10 +1305,21 @@ class WorldOptionDocument:
         settings_prop = option_value.get("Settings")
         if not isinstance(settings_prop, dict) or not isinstance(settings_prop.get("value"), dict):
             raise ValueError("INVALID_WORLDOPTION")
+        return settings_prop["value"]
+
+    def load(self, path: str | os.PathLike) -> dict:
+        path = Path(path)
+        if path.name.casefold() != SAVE_FILENAME.casefold():
+            raise ValueError("INVALID_NAME")
+
+        raw = path.read_bytes()
+        gvas_bytes, magic, save_type = decompress_sav(raw)
+        gvas_file = parse_worldoption_gvas(gvas_bytes)
+        settings = self._get_settings(gvas_file)
 
         self.path = path
         self.gvas_file = gvas_file
-        self.settings = settings_prop["value"]
+        self.settings = settings
         self.loaded_hash = sha256_bytes(raw)
         self.original_magic = magic
         self.original_save_type = save_type
@@ -1352,13 +1327,14 @@ class WorldOptionDocument:
         return self.settings
 
     def build_save(self, edited_values: dict[str, object]) -> tuple[bytes, object, bytes]:
-        if self.gvas_file is None or self.original_magic is None or self.original_save_type is None:
+        if self.original_gvas is None or self.original_magic is None or self.original_save_type is None:
             raise RuntimeError("No WorldOption.sav is loaded.")
 
-        # Deep-copy the detached dump so validation failures cannot mutate the
-        # live in-memory document.
-        dumped = copy.deepcopy(self.gvas_file.dump())
-        settings = dumped["properties"]["OptionWorldData"]["value"]["Settings"]["value"]
+        # Start every save from the exact GVAS bytes originally loaded. This
+        # avoids dump()/GvasFile.load() reconstruction and keeps all untouched
+        # structures in the same representation as the source file.
+        working_file = parse_worldoption_gvas(self.original_gvas)
+        settings = self._get_settings(working_file)
 
         for key, editor_value in edited_values.items():
             prop = settings.get(key)
@@ -1369,19 +1345,18 @@ class WorldOptionDocument:
             except Exception as exc:
                 raise ValueError(f"{key}\n{exc}") from exc
 
-        new_gvas_file = GvasFile.load(dumped)
-        new_gvas = new_gvas_file.write({})
+        try:
+            new_gvas = working_file.write({})
+        except Exception as exc:
+            raise SaveFormatError(f"GVAS serialization failed: {exc}") from exc
 
-        # The edited GVAS must itself be stable under parse -> write before we
-        # even attempt container compression.
-        require_gvas_roundtrip(new_gvas)
+        # Ensure the serialized result is at least parseable before compression.
+        check_file = parse_worldoption_gvas(new_gvas)
 
-        new_sav = compress_for_source(
-            new_gvas, self.original_magic, self.original_save_type
-        )
+        new_sav = compress_sav(new_gvas, self.original_magic, self.original_save_type)
 
-        # Container safety gate: decompress exactly what will be written and
-        # require byte-identical GVAS. This catches bad headers/compression.
+        # Reference-style safety check: immediately decompress the exact bytes
+        # that will be written and require the GVAS payload to match exactly.
         check_gvas, _, _ = decompress_sav(new_sav)
         if check_gvas != new_gvas:
             pos = first_difference(new_gvas, check_gvas)
@@ -1390,15 +1365,12 @@ class WorldOptionDocument:
                 f"First GVAS difference: offset {pos}."
             )
 
-        # One final semantic parser gate on the decompressed output.
-        check_file = require_gvas_roundtrip(check_gvas)
-        return new_sav, check_file, check_gvas
+        return new_sav, check_file, new_gvas
 
     def save(self, edited_values: dict[str, object]) -> Path:
         if self.path is None:
             raise RuntimeError("No WorldOption.sav is loaded.")
 
-        # Prevent overwriting an in-game autosave that happened after opening.
         current_raw = self.path.read_bytes()
         if self.loaded_hash is not None and sha256_bytes(current_raw) != self.loaded_hash:
             raise ExternalFileChangedError()
@@ -1406,7 +1378,7 @@ class WorldOptionDocument:
         new_sav, new_gvas_file, new_gvas = self.build_save(edited_values)
         backup_path = next_backup_path(self.path)
 
-        # Always preserve the exact pre-save file before replacing it.
+        # Preserve the exact pre-save file before any replacement.
         shutil.copy2(self.path, backup_path)
 
         temp_path = None
@@ -1423,14 +1395,14 @@ class WorldOptionDocument:
                 tmp.flush()
                 os.fsync(tmp.fileno())
 
-            # Re-open the temporary file from disk and validate it once more.
+            # Validate the bytes after they have actually reached disk.
             disk_raw = temp_path.read_bytes()
             disk_gvas, disk_magic, disk_save_type = decompress_sav(disk_raw)
             if disk_gvas != new_gvas:
                 raise RuntimeError(
                     "Temporary-file verification failed; original file was not modified."
                 )
-            require_gvas_roundtrip(disk_gvas)
+            disk_gvas_file = parse_worldoption_gvas(disk_gvas)
 
             os.replace(temp_path, self.path)
             temp_path = None
@@ -1442,8 +1414,8 @@ class WorldOptionDocument:
                     pass
             raise
 
-        self.gvas_file = new_gvas_file
-        self.settings = self.gvas_file.properties["OptionWorldData"]["value"]["Settings"]["value"]
+        self.gvas_file = disk_gvas_file
+        self.settings = self._get_settings(self.gvas_file)
         self.loaded_hash = sha256_bytes(new_sav)
         self.original_magic = disk_magic
         self.original_save_type = disk_save_type
