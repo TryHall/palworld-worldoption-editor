@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Palworld WorldOption.sav editor.
+"""Palworld WorldOption editor.
 
 Requirements (Windows, Python 3.10+):
     python -m pip install palworld-save-tools pyooz
@@ -63,7 +63,7 @@ except Exception:
     _ooz_decompress = None
 
 
-APP_NAME = "Palworld WorldOption.sav Editor"
+APP_NAME = "Palworld WorldOption Editor"
 SAVE_FILENAME = "WorldOption.sav"
 DEFAULT_SAVE_ROOT = Path(
     os.environ.get("LOCALAPPDATA", str(Path.home()))
@@ -246,7 +246,7 @@ I18N = {
     },
     "ja": {
         "language_name": "日本語",
-        "title": "Palworld WorldOption.sav エディター",
+        "title": "Palworld WorldOption エディター",
         "open": "WorldOption.sav を開く…",
         "save": "保存",
         "reset": "デフォルトに戻す",
@@ -285,7 +285,7 @@ I18N = {
     },
     "zh": {
         "language_name": "简体中文",
-        "title": "Palworld WorldOption.sav 编辑器",
+        "title": "Palworld WorldOption 编辑器",
         "open": "打开 WorldOption.sav…",
         "save": "保存",
         "reset": "恢复默认值",
