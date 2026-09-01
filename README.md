@@ -1,3 +1,4 @@
+<div align="center"><img alt="Palworld WorldOption Editor" src="doc/LOGO.png"></div>
 # Palworld WorldOption Editor
 
 **[English](#english)** · **[日本語](#japanese)** · **[简体中文](#chinese)**
@@ -11,6 +12,7 @@ A lightweight Windows desktop editor for Palworld `WorldOption.sav` files, with 
 # English
 
 ## Overview
+<div align="center"><img alt="en" src="doc/en.png"></div>
 
 Palworld WorldOption Editor provides a graphical interface for viewing and editing the settings stored in `WorldOption.sav`.
 
@@ -118,6 +120,7 @@ Some settings can have significant effects on an existing world when reduced bel
 # 日本語
 
 ## 概要
+<div align="center"><img alt="ja" src="doc/ja.png"></div>
 
 Palworld WorldOption Editor は、Palworld の `WorldOption.sav` に保存されているワールド設定を確認・編集するための Windows 向け GUI ツールです。
 
@@ -225,6 +228,7 @@ Palworld のセーブファイルは、Palworld 独自の圧縮コンテナ内�
 # 简体中文
 
 ## 概述
+<div align="center"><img alt="zh" src="doc/zh.png"></div>
 
 Palworld WorldOption Editor 是一个用于查看和编辑 Palworld `WorldOption.sav` 世界设置的 Windows 图形界面工具。
 
