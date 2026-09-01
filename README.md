@@ -13,7 +13,7 @@ A lightweight Windows desktop editor for Palworld `WorldOption.sav` files, with 
 # English
 
 ## Overview
-<div align="center"><img alt="en" src="doc/.png"></div>
+<div align="center"><img alt="en" src="doc/en.png"></div>
 
 Palworld WorldOption Editor provides a graphical interface for viewing and editing the settings stored in `WorldOption.sav`.
 
