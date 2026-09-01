@@ -1,4 +1,4 @@
-<div align="center"><img alt="NEV Converter Pro" src="doc/logo.png" width="150"></div>
+<div align="center"><img alt="Palworld WorldOption Editor" src="doc/LOGO.png" width="150"></div>
 
 # Palworld WorldOption Editor
 
