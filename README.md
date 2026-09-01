@@ -1,4 +1,5 @@
 <div align="center"><img alt="Palworld WorldOption Editor" src="doc/LOGO.png"></div>
+
 # Palworld WorldOption Editor
 
 **[English](#english)** · **[日本語](#japanese)** · **[简体中文](#chinese)**
